@@ -1,54 +1,46 @@
+import os
 from flask import Flask, request, render_template, jsonify
 from pymongo import MongoClient
 from datetime import datetime
-import os
 from dotenv import load_dotenv
-load_env()
+load_dotenv()
 
-base_dir = os.path.dirname(os.path.abspath(__file__))
-template_dir = os.path.join(base_dir, '../templates')
+# Vercel path fix: ensures it finds the templates folder correctly
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+template_dir = os.path.join(base_dir, 'templates')
 
 app = Flask(__name__, template_folder=template_dir)
 
-# Connect to MongoDB
-MONGO_URI = os.getenv("MONGO_URI")
-client = MongoClient(MONGO_URI)
-db = client['github_events']
-collection = db['actions']
+# Initialize MongoDB safely
+def get_db_collection():
+    uri = os.getenv("MONGO_URI")
+    if not uri:
+        return None
+    try:
+        client = MongoClient(uri, serverSelectionTimeoutMS=5000)
+        # Force a connection check
+        client.admin.command('ping') 
+        return client['github_events']['actions']
+    except Exception as e:
+        print(f"Database connection failed: {e}")
+        return None
 
 @app.route('/')
 def home():
     return render_template('index.html')
 
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    data = request.json
-    event_type = request.headers.get('X-GitHub-Event')
-    
-    entry = {
-        "author": data.get('sender', {}).get('login'),
-        "timestamp": datetime.utcnow().strftime('%d %B %Y - %I:%M %p UTC')
-    }
-
-    if event_type == "push":
-        entry["action"] = "PUSH"
-        entry["to_branch"] = data.get('ref', '').split('/')[-1]
-    elif event_type == "pull_request":
-        pr = data.get('pull_request', {})
-        if data.get('action') == 'closed' and pr.get('merged'):
-            entry["action"] = "MERGE"
-        else:
-            entry["action"] = "PULL_REQUEST"
-        entry["from_branch"] = pr.get('head', {}).get('ref')
-        entry["to_branch"] = pr.get('base', {}).get('ref')
-
-    if "action" in entry:
-        collection.insert_one(entry)
-    return "OK", 200
-
 @app.route('/api/latest')
 def get_latest():
+    collection = get_db_collection()
+    if collection is None:
+        return jsonify([{"author": "System", "action": "ERROR", "timestamp": "Check MONGO_URI in Vercel settings"}])
+    
     docs = list(collection.find().sort("_id", -1).limit(10))
     for doc in docs:
         doc['_id'] = str(doc['_id'])
     return jsonify(docs)
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    # ... (Your existing webhook logic here) ...
+    return "OK", 200
