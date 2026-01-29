@@ -37,13 +37,20 @@ def get_latest():
         doc['_id'] = str(doc['_id'])
     return jsonify(docs)
 
-@app.route('/webhook', methods=['POST'])
+# Change this line to allow both GET (for testing) and POST (for GitHub)
+@app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
+    if request.method == 'GET':
+        return "Webhook route is active! Send a POST request to store data.", 200
+
     collection = get_db()
     if collection is None:
         return "Database Connection Failed", 500
 
     data = request.json
+    if not data:
+        return "No JSON data received", 400
+
     event_type = request.headers.get('X-GitHub-Event')
     
     entry = {
@@ -58,18 +65,13 @@ def webhook():
     elif event_type == "pull_request":
         action = data.get('action')
         pr = data.get('pull_request', {})
-        if action == "closed" and pr.get('merged'):
-            entry["action"] = "MERGE"
-        else:
-            entry["action"] = "PULL_REQUEST"
+        entry["action"] = "MERGE" if (action == "closed" and pr.get('merged')) else "PULL_REQUEST"
         entry["from_branch"] = pr.get('head', {}).get('ref')
         entry["to_branch"] = pr.get('base', {}).get('ref')
 
-    if "action" in entry:
-        collection.insert_one(entry)
-        return "Success", 200
-    
-    return "Event ignored", 200
+    # Insert into MongoDB
+    collection.insert_one(entry)
+    return "Event Stored Successfully", 200
 @app.route('/debugdb')
 def debug_db():
     uri = os.environ.get("MONGO_URI")
