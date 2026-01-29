@@ -70,3 +70,14 @@ def webhook():
         return "Success", 200
     
     return "Event ignored", 200
+@app.route('/debugdb')
+def debug_db():
+    uri = os.environ.get("MONGO_URI")
+    if not uri:
+        return "Error: MONGO_URI environment variable is missing!", 500
+    try:
+        client = MongoClient(uri, serverSelectionTimeoutMS=5000)
+        client.admin.command('ping') # This tests the actual connection
+        return "Success: Connected to MongoDB!", 200
+    except Exception as e:
+        return f"Connection Failed: {str(e)}", 500
