@@ -5,10 +5,12 @@ import os
 from dotenv import load_dotenv
 load_env()
 
-app = Flask(__name__, template_folder='../templates')
+base_dir = os.path.dirname(os.path.abspath(__file__))
+template_dir = os.path.join(base_dir, '../templates')
 
-# MongoDB Connection
-# Replace with your Atlas string or set it in Vercel Environment Variables
+app = Flask(__name__, template_folder=template_dir)
+
+# Connect to MongoDB
 MONGO_URI = os.getenv("MONGO_URI")
 client = MongoClient(MONGO_URI)
 db = client['github_events']
