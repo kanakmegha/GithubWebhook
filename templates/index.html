@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitHub Webhook Feed</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f6f8fa; margin: 0; padding: 20px; color: #24292e; }
+        .container { max-width: 800px; margin: 0 auto; background: white; border: 1px solid #e1e4e8; border-radius: 6px; padding: 20px; box-shadow: 0 1px 3px rgba(27,31,35,0.12); }
+        h1 { border-bottom: 1px solid #eaecef; padding-bottom: 10px; font-size: 24px; }
+        #feed { margin-top: 20px; }
+        .event-card { padding: 12px; border-bottom: 1px solid #e1e4e8; animation: fadeIn 0.5s; }
+        .event-card:last-child { border-bottom: none; }
+        .action { font-weight: bold; color: #0366d6; }
+        .timestamp { font-size: 12px; color: #586069; display: block; margin-top: 4px; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Recent GitHub Actions</h1>
+        <div id="feed">Checking for new events...</div>
+    </div>
+
+    <script>
+        function updateFeed() {
+            fetch('/api/latest')
+                .then(response => response.json())
+                .then(data => {
+                    const feed = document.getElementById('feed');
+                    if (data.length === 0) {
+                        feed.innerHTML = "<p>No events yet. Push some code to your action-repo!</p>";
+                        return;
+                    }
+
+                    feed.innerHTML = data.map(event => {
+                        let detail = "";
+                        if (event.action === "PUSH") {
+                            detail = `pushed to <code>${event.to_branch}</code>`;
+                        } else if (event.action === "PULL_REQUEST") {
+                            detail = `opened a PR from <code>${event.from_branch}</code> to <code>${event.to_branch}</code>`;
+                        } else if (event.action === "MERGE") {
+                            detail = `merged <code>${event.from_branch}</code> into <code>${event.to_branch}</code>`;
+                        }
+
+                        return `
+                            <div class="event-card">
+                                <span class="action">${event.author}</span> ${detail}
+                                <span class="timestamp">${event.timestamp}</span>
+                            </div>
+                        `;
+                    }).join('');
+                })
+                .catch(err => console.error("Error fetching events:", err));
+        }
+
+        // Initial fetch
+        updateFeed();
+        // Poll every 15 seconds
+        setInterval(updateFeed, 15000);
+    </script>
+</body>
+</html>
