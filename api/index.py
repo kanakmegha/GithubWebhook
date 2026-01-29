@@ -38,40 +38,50 @@ def get_latest():
     return jsonify(docs)
 
 # Change this line to allow both GET (for testing) and POST (for GitHub)
-@app.route('/webhook', methods=['GET', 'POST'])
+@app.route('/webhook', methods=['POST'])
 def webhook():
-    if request.method == 'GET':
-        return "Webhook route is active! Send a POST request to store data.", 200
-
     collection = get_db()
     if collection is None:
         return "Database Connection Failed", 500
 
     data = request.json
-    if not data:
-        return "No JSON data received", 400
-
     event_type = request.headers.get('X-GitHub-Event')
     
+    # Base entry matching your schema screenshot
     entry = {
         "author": data.get('sender', {}).get('login', 'Unknown'),
-        "timestamp": datetime.now().strftime('%d %B %Y - %I:%M %p')
+        # Schema Requirement: Formatted string (UTC)
+        "timestamp": datetime.utcnow().strftime('%d %B %Y - %I:%M %p UTC'),
+        "from_branch": "",
+        "to_branch": ""
     }
 
     if event_type == "push":
         entry["action"] = "PUSH"
+        # Schema Requirement: Use Git commit hash directly
+        entry["request_id"] = data.get('after') 
         entry["to_branch"] = data.get('ref', '').split('/')[-1]
     
     elif event_type == "pull_request":
         action = data.get('action')
         pr = data.get('pull_request', {})
-        entry["action"] = "MERGE" if (action == "closed" and pr.get('merged')) else "PULL_REQUEST"
+        # Schema Requirement: Use PR ID
+        entry["request_id"] = str(pr.get('id')) 
+        
+        if action == "closed" and pr.get('merged'):
+            entry["action"] = "MERGE"
+        else:
+            entry["action"] = "PULL_REQUEST"
+            
         entry["from_branch"] = pr.get('head', {}).get('ref')
         entry["to_branch"] = pr.get('base', {}).get('ref')
 
-    # Insert into MongoDB
-    collection.insert_one(entry)
-    return "Event Stored Successfully", 200
+    # Save to MongoDB
+    if "action" in entry:
+        collection.insert_one(entry)
+        return "Event Stored", 200
+    
+    return "Event ignored", 200
 @app.route('/debugdb')
 def debug_db():
     uri = os.environ.get("MONGO_URI")
