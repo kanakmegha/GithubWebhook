@@ -3,48 +3,70 @@ from flask import Flask, request, render_template, jsonify
 from pymongo import MongoClient
 from datetime import datetime
 
-# Vercel-specific pathing: Look for 'templates' in the root folder
-# (One level up from this 'api' folder)
+# Vercel-friendly pathing for templates
 app = Flask(__name__, template_folder='../templates')
 
-# Initialize MongoDB safely
-def get_db_collection():
-    # Vercel automatically provides this from your Project Settings
-    uri = os.environ.get("MONGO_URI") 
+# MongoDB Connection
+def get_db():
+    uri = os.environ.get("MONGO_URI")
     if not uri:
-        print("CRITICAL: MONGO_URI not found in Environment Variables")
         return None
     try:
-        # We use a 5-second timeout so the app doesn't hang forever if DB is down
         client = MongoClient(uri, serverSelectionTimeoutMS=5000)
         return client['github_events']['actions']
-    except Exception as e:
-        print(f"Database connection failed: {e}")
+    except:
         return None
-
-@app.route('/test')
-def test():
-    return "App is alive!", 200
 
 @app.route('/')
 def home():
     return render_template('index.html')
 
-@app.route('/api/latest')
+@app.route('/api/latest', methods=['GET'])
 def get_latest():
-    collection = get_db_collection()
+    collection = get_db()
     if collection is None:
-        return jsonify([{"author": "System", "action": "ERROR", "timestamp": "Check MONGO_URI in Vercel settings"}])
-    
-    try:
-        docs = list(collection.find().sort("_id", -1).limit(10))
-        for doc in docs:
-            doc['_id'] = str(doc['_id'])
-        return jsonify(docs)
-    except Exception as e:
-        return jsonify([{"author": "System", "action": "DB_ERROR", "timestamp": str(e)}])
+        return jsonify([])
+    # Get last 10 events
+    docs = list(collection.find().sort("_id", -1).limit(10))
+    for doc in docs:
+        doc['_id'] = str(doc['_id'])
+    return jsonify(docs)
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    # Your webhook logic here...
-    return "OK", 200
+    collection = get_db()
+    if collection is None:
+        return "DB Connection Failed", 500
+
+    data = request.json
+    event_type = request.headers.get('X-GitHub-Event')
+    
+    # Standard info for all events
+    entry = {
+        "author": data.get('sender', {}).get('login', 'Unknown'),
+        "timestamp": datetime.now().strftime('%d %B %Y - %I:%M %p')
+    }
+
+    # Custom logic based on the event type
+    if event_type == "push":
+        entry["action"] = "PUSH"
+        entry["to_branch"] = data.get('ref', '').split('/')[-1]
+    
+    elif event_type == "pull_request":
+        action = data.get('action') # 'opened', 'closed', etc.
+        pr = data.get('pull_request', {})
+        
+        if action == "closed" and pr.get('merged') == True:
+            entry["action"] = "MERGE"
+        else:
+            entry["action"] = "PULL_REQUEST"
+            
+        entry["from_branch"] = pr.get('head', {}).get('ref')
+        entry["to_branch"] = pr.get('base', {}).get('ref')
+
+    # Save to MongoDB if it's an event we care about
+    if "action" in entry:
+        collection.insert_one(entry)
+        return "Event Stored", 200
+    
+    return "Event ignored", 200
