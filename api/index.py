@@ -2,28 +2,29 @@ import os
 from flask import Flask, request, render_template, jsonify
 from pymongo import MongoClient
 from datetime import datetime
-from dotenv import load_dotenv
-load_dotenv()
 
-# Vercel path fix: ensures it finds the templates folder correctly
-base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-template_dir = os.path.join(base_dir, 'templates')
-
-app = Flask(__name__, template_folder=template_dir)
+# Vercel-specific pathing: Look for 'templates' in the root folder
+# (One level up from this 'api' folder)
+app = Flask(__name__, template_folder='../templates')
 
 # Initialize MongoDB safely
 def get_db_collection():
-    uri = os.getenv("MONGO_URI")
+    # Vercel automatically provides this from your Project Settings
+    uri = os.environ.get("MONGO_URI") 
     if not uri:
+        print("CRITICAL: MONGO_URI not found in Environment Variables")
         return None
     try:
+        # We use a 5-second timeout so the app doesn't hang forever if DB is down
         client = MongoClient(uri, serverSelectionTimeoutMS=5000)
-        # Force a connection check
-        client.admin.command('ping') 
         return client['github_events']['actions']
     except Exception as e:
         print(f"Database connection failed: {e}")
         return None
+
+@app.route('/test')
+def test():
+    return "App is alive!", 200
 
 @app.route('/')
 def home():
@@ -35,12 +36,15 @@ def get_latest():
     if collection is None:
         return jsonify([{"author": "System", "action": "ERROR", "timestamp": "Check MONGO_URI in Vercel settings"}])
     
-    docs = list(collection.find().sort("_id", -1).limit(10))
-    for doc in docs:
-        doc['_id'] = str(doc['_id'])
-    return jsonify(docs)
+    try:
+        docs = list(collection.find().sort("_id", -1).limit(10))
+        for doc in docs:
+            doc['_id'] = str(doc['_id'])
+        return jsonify(docs)
+    except Exception as e:
+        return jsonify([{"author": "System", "action": "DB_ERROR", "timestamp": str(e)}])
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    # ... (Your existing webhook logic here) ...
+    # Your webhook logic here...
     return "OK", 200
