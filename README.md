@@ -32,7 +32,7 @@ This project is a high-performance monitoring system designed to track real-time
 - `action-repo`: A secondary repository used to trigger dummy GitHub Actions for testing the integration.
 
 ## ⚙️ Installation & Setup
-1. Clone the repository: `git clone [[your-repo-link]](https://github.com/kanakmegha/GithubWebhook.git)`
+1. Clone the repository: `git clone https://github.com/kanakmegha/GithubWebhook.git`
 2. Install dependencies: `npm install` or `pip install -r requirements.txt`
 3. Set your Webhook Secret in the `.env` file.
 4. Run the development server: `npm run dev` or `uvicorn main:app --reload`
